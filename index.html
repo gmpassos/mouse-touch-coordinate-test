@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mouse and Touch Coordinate Precision</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      margin: 0;
+    }
+
+    #area {
+      height: 300px;
+      border: 2px solid #888;
+      background: #f5f5f5;
+      cursor: crosshair;
+      /* Disable browser panning/zooming gestures so touch and pointer
+         events reach the page instead of being consumed by scrolling. */
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    #output {
+      font-size: 13px;
+      line-height: 1.5;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    /* Each entry is joined with '\n' and rendered via textContent, so
+       pre-wrap is required for the line breaks to show. Long lines wrap
+       instead of forcing horizontal scrolling on narrow screens. */
+    #output div {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    #output hr {
+      border: 0;
+      border-top: 1px solid #aaa;
+      margin: 12px 0;
+    }
+  </style>
+</head>
+<body>
+  <h2>Mouse and Touch Coordinate Test</h2>
+
+  <p>Move, click, press, release or touch inside the area.</p>
+
+  <div id="area"></div>
+
+  <h3>Event history</h3>
+  <div id="output"></div>
+
+  <script>
+    const area = document.getElementById('area');
+    const output = document.getElementById('output');
+
+    // Maximum number of logged events kept in the history.
+    const MAX_ENTRIES = 500;
+
+    // Each logged event occupies two children of #output: an <hr>
+    // separator and the entry <div>.
+    const NODES_PER_ENTRY = 2;
+
+    const eventTypes = [
+      // Mouse events
+      'mousemove', 'mousedown', 'mouseup', 'click',
+      'dblclick', 'contextmenu', 'mouseenter', 'mouseleave',
+      'mouseover', 'mouseout',
+
+      // Pointer events
+      'pointermove', 'pointerdown', 'pointerup',
+      'pointercancel', 'pointerenter', 'pointerleave',
+      'pointerover', 'pointerout',
+
+      // Touch events
+      'touchstart', 'touchmove', 'touchend', 'touchcancel'
+    ];
+
+    // Prints the raw browser value and classifies it. Values are never
+    // rounded or adjusted, so the classification reflects exactly what the
+    // browser reported. Non-numeric values (a property missing in some
+    // browser) are flagged instead of being misreported as "fractional".
+    function formatCoordinate(value) {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return `${value} (not a number)`;
+      }
+      return `${value} (${Number.isInteger(value) ? 'integer' : 'fractional'})`;
+    }
+
+    function logEvent(event) {
+      const entries = [];
+
+      function addCoordinates(label, x, y) {
+        entries.push(
+          `${label}: X=${formatCoordinate(x)}, Y=${formatCoordinate(y)}`
+        );
+      }
+
+      entries.push(`[${new Date().toISOString()}]`);
+      entries.push(`Type: ${event.type}`);
+      entries.push(`Constructor: ${event.constructor.name}`);
+
+      if ('clientX' in event) {
+        addCoordinates('Client', event.clientX, event.clientY);
+        addCoordinates('Page', event.pageX, event.pageY);
+        addCoordinates('Screen', event.screenX, event.screenY);
+        addCoordinates('Offset', event.offsetX, event.offsetY);
+      }
+
+      if ('pointerType' in event) {
+        entries.push(`Pointer type: ${event.pointerType}`);
+        entries.push(`Pointer ID: ${event.pointerId}`);
+      }
+
+      if ('button' in event) {
+        entries.push(`Button: ${event.button}`);
+        entries.push(`Buttons: ${event.buttons}`);
+      }
+
+      if ('touches' in event) {
+        entries.push(`Touches: ${event.touches.length}`);
+
+        // changedTouches (not touches) is used because on touchend and
+        // touchcancel the lifted/cancelled touch points are no longer in
+        // `touches`; they are only reported in `changedTouches`.
+        for (const touch of event.changedTouches) {
+          addCoordinates(
+            `Touch ID ${touch.identifier} Client`,
+            touch.clientX,
+            touch.clientY
+          );
+          addCoordinates(
+            `Touch ID ${touch.identifier} Page`,
+            touch.pageX,
+            touch.pageY
+          );
+          addCoordinates(
+            `Touch ID ${touch.identifier} Screen`,
+            touch.screenX,
+            touch.screenY
+          );
+        }
+      }
+
+      entries.push(`Device pixel ratio: ${window.devicePixelRatio}`);
+
+      // textContent (never innerHTML) keeps the rendered data inert.
+      const section = document.createElement('div');
+      section.textContent = entries.join('\n');
+
+      const separator = document.createElement('hr');
+
+      output.prepend(separator, section);
+
+      // Keep history bounded to MAX_ENTRIES events by removing the oldest
+      // entry (its <div> and its <hr>) from the end.
+      while (output.children.length > MAX_ENTRIES * NODES_PER_ENTRY) {
+        output.lastElementChild.remove();
+        output.lastElementChild.remove();
+      }
+    }
+
+    // Every event type is logged independently: mouse, pointer and touch
+    // events for the same physical action are intentionally not
+    // deduplicated, so their coordinates can be compared side by side.
+    for (const type of eventTypes) {
+      area.addEventListener(type, logEvent);
+    }
+  </script>
+</body>
+</html>
